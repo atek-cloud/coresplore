@@ -46,7 +46,7 @@
     "autobase": "*",
     "body-parser": "^1.19.0",
     "concat-stream": "^2.0.0",
-    "corestore": "^6.0.0-alpha.3",
+    "corestore": "6.0.0-alpha.3",
     "express": "^4.17.1",
     "express-basic-auth": "^1.2.0",
     "hi-base32": "^0.5.1",
