@@ -8,6 +8,8 @@ An easy-to-run Web app for exploring and editing Hypercores.
 npm i -g coresplore
 ```
 
+![screenshot.jpg](screenshot.jpg)
+
 ## Features
 
 - [ ] Access Hypercores
@@ -21,8 +23,6 @@ npm i -g coresplore
 - [ ] View Hyperbee record history
 - [ ] Various other TODOs
   - [ ] Clear data from deleted DBs
-
-![screenshot.jpg](screenshot.jpg)
 
 ## Usage
 
