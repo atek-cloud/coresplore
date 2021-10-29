@@ -472,7 +472,7 @@ class DbView extends LitElement {
 
   async onClickSave () {
     let parsed
-    const value = this.querySelector('#buffer').value
+    const value = this.querySelector('#buffer textarea').value
     try {
       parsed = JSON.parse(value)
     } catch (e) {
