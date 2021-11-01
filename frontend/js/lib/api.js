@@ -15,5 +15,7 @@ export async function http (method, path, body, contentType = undefined) {
     headers,
     body
   })
-  return await res.json()
+  const resbody = await res.json()
+  if (resbody.error) throw resbody.message || 'API call failed'
+  return resbody
 }

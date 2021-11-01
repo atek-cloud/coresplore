@@ -12,7 +12,7 @@ import pump from 'pump'
 import concat from 'concat-stream'
 import * as config from './config.js'
 import lock from './lock.js'
-import { toBase32, fromBase32 } from './util.js'
+import { toBase32, fromBase32, joinPath } from './util.js'
 
 let store: Corestore
 let swarm: Hyperswarm
@@ -118,7 +118,7 @@ export class HyperStruct {
     if (!this.bee) {
       this.bee = new Hyperbee(this.core, {
         keyEncoding: 'utf8',
-        valueEncoding: 'json'
+        valueEncoding: 'binary'
       })
       await this.bee.ready()
     }
@@ -207,17 +207,62 @@ export function beeSubByPath (bee: Hyperbee, pathParts: string[]): Hyperbee {
   return bee
 }
 
-export async function beeList (bee: Hyperbee, pathParts: string[], opts: any): Promise<any> {
-  const stream = beeSubByPath(bee, pathParts)?.createReadStream(opts)
-  return await new Promise((resolve, reject) => {
+export async function beeGet (bee: Hyperbee, path: string[], opts: any): Promise<any> {
+  const encoding = isValidValueEncoding(opts.encoding) ? opts.encoding : 'utf-8'
+  const rpath = `/${joinPath(...path)}`
+  const record = await beeSubByPath(bee, path.slice(0, -1)).get(path[path.length - 1])
+  if (record) {
+    if (encoding === 'binary') {
+      record.value = record.value.toString('hex')
+    } else {
+      record.value = record.value.toString('utf-8')
+    }
+    return {
+      key: record.key,
+      path: rpath,
+      seq: record.seq,
+      value: record.value
+    }
+  }
+}
+
+export async function beeList (bee: Hyperbee, path: string[], opts: any): Promise<any> {
+  const encoding = isValidValueEncoding(opts.encoding) ? opts.encoding : 'utf-8'
+  const stream = beeSubByPath(bee, path)?.createReadStream(opts)
+  const records: any[] = await new Promise((resolve, reject) => {
     pump(
       stream,
+      // @ts-ignore the type sig is wrong
       concat(resolve),
       (err: any) => {
         if (err) reject(err)
       }
     )
   })
+  return records.map((record) => {
+    if (encoding === 'binary') {
+      record.value = record.value.toString('hex')
+    } else {
+      record.value = record.value.toString('utf-8')
+    }
+    const keyParts = record.key.split('\x00').filter(Boolean)
+    return {
+      key: keyParts.join('/'),
+      path: `/${joinPath(...path, ...keyParts)}`,
+      seq: record.seq,
+      value: record.value
+    }
+  })
+}
+
+export async function beePut (bee: Hyperbee, path: string[], value: any, opts: any): Promise<any> {
+  const encoding = isValidValueEncoding(opts.encoding) ? opts.encoding : 'utf-8'
+  if (encoding === 'binary') {
+    value = Buffer.from(value, 'hex')
+  } else {
+    value = Buffer.from(value, 'utf-8')
+  }
+  await beeSubByPath(bee, path.slice(0, -1)).put(path[path.length - 1], value)
 }
 
 function assertValidType (v: string) {

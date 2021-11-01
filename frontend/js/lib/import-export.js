@@ -18,8 +18,16 @@ export function exportAsJson (records) {
     "@context": "https://atek.cloud/hyperbee-export"
   }
   for (const record of records) {
-    exportJson[record.path] = record.value
+    exportJson[record.path] = safeParse(record.value)
   }
   const jsonBlob = new Blob([JSON.stringify(exportJson, null, 2)], {type: 'application/json;charset=utf-8'})
   downloadBlob(jsonBlob, 'export.json')
+}
+
+function safeParse (v) {
+  try {
+    return JSON.parse(v)
+  } catch (e) {
+    return v
+  }
 }

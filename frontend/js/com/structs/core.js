@@ -2,7 +2,6 @@ import { LitElement, html } from '../../../vendor/lit/lit.min.js'
 import { repeat } from '../../../vendor/lit/directives/repeat.js'
 import * as api from '../../lib/api.js'
 import * as QP from '../../lib/qp.js'
-import { joinPath } from '../../lib/strings.js'
 import { emit } from '../../lib/dom.js'
 import * as toast from '../toast.js'
 import { ConfirmPopup } from '../popups/confirm.js'
@@ -282,6 +281,7 @@ class StructCore extends LitElement {
       value = value.replace(/\s/g, '')
       if (/[^0-9a-f]/.test(value)) {
         toast.create('Binary must be encoded in hex. Non-hex values are present.', 'error')
+        return
       }
     }
     

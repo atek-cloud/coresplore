@@ -8,6 +8,7 @@ import { exportAsJson, importFromJson } from '../../lib/import-export.js'
 import * as toast from '../toast.js'
 import { GeneralPopup } from '../popups/general.js'
 import { ConfirmPopup } from '../popups/confirm.js'
+import selectorSvg from '../../icons/selector.js'
 import '../button.js'
 import '../code-textarea.js'
 
@@ -16,6 +17,7 @@ class StructBee extends LitElement {
     return {
       hyperKey: {type: String},
       dbDesc: {type: Object},
+      encoding: {type: String},
       error: {type: String},
       record: {type: Array},
       records: {type: Array},
@@ -33,6 +35,7 @@ class StructBee extends LitElement {
     super()
     this.hyperKey = ''
     this.dbDesc = undefined
+    this.encoding = undefined
     this.error = undefined
     this.record = undefined
     this.records = undefined
@@ -50,6 +53,10 @@ class StructBee extends LitElement {
     this.isEditingNew = undefined
 
     this.hyperKey = QP.get('key')
+    this.encoding = QP.get('encoding')
+    if (!this.encoding) {
+      this.encoding = 'utf-8'
+    }
 
     if (QP.has('new')) {
       this.isEditingNew = {
@@ -60,13 +67,13 @@ class StructBee extends LitElement {
     } else {
       this.currentDBPath = QP.get('path', '/').split('/').filter(Boolean)
       try {
-        this.record = QP.has('container') || this.currentDBPath.length === 0 ? undefined : await api.http('GET', `/_api/bee/${this.hyperKey}/${this.currentDBPath.join('/')}`).catch(e => undefined)
+        this.record = QP.has('container') || this.currentDBPath.length === 0 ? undefined : await api.http('GET', `/_api/bee/${this.hyperKey}/${this.currentDBPath.join('/')}?encoding=${this.encoding}`).catch(e => undefined)
         if (this.record?.error) {
           console.error(this.record)
           this.record = undefined
         }
-        this.records = toShallow(this.currentDBPath, (await api.http('GET', `/_api/bee/${this.hyperKey}/${this.currentDBPath.join('/')}?list=1`)).records)
-        this.initialRecordValue = this.record ? JSON.stringify(this.record.value, null, 2) : undefined
+        this.records = toShallow(this.currentDBPath, (await api.http('GET', `/_api/bee/${this.hyperKey}/${this.currentDBPath.join('/')}?list=1&encoding=${this.encoding}`)).records)
+        this.initialRecordValue = this.record ? this.renderRecordValue(this.record, true) : ''
         console.log(this.currentDBPath, this.record || this.records)
       } catch (e) {
         this.error = e.toString()
@@ -281,7 +288,7 @@ class StructBee extends LitElement {
           <div class="px-3 py-2" style="flex: 0 0 20px" @click=${this.onToggleAllChecked}>
             <span class="far fa-fw ${this.selectedRecordKeys.length === this.records.length ? `fa-check-square` : `fa-square`}"></span>
           </div>
-          <div class="px-2 py-2">
+          <div class="flex-1 px-2 py-2">
             <app-button label="New record" class="mr-1" btn-class="px-2 py-0" ?disabled=${!this.dbDesc.writable} @click=${this.onClickNew}></app-button>
             ${this.selectedRecordKeys.length > 1 ? html`
               <app-button label="Delete" class="mr-1" btn-class="px-2 py-0" ?disabled=${!this.dbDesc.writable} @click=${this.onClickDeleteSelected}></app-button>
@@ -298,6 +305,9 @@ class StructBee extends LitElement {
               <app-button label="Import" class="mr-1" btn-class="px-2 py-0" ?disabled=${!this.dbDesc.writable} @click=${this.onClickImport}></app-button>
             `}
           </div>
+          <div class="px-2 py-2">
+            ${this.renderEncodingControl()}
+          </div>
         </div>
         ${repeat(this.records, r => r.key, (record, i) => html`
           <a
@@ -312,7 +322,7 @@ class StructBee extends LitElement {
             </div>
             <div class="px-3 py-2 text-sm border-l border-default truncate" style="flex: 0 0 250px">${record.key}</div>
             <div class="flex-1 px-3 py-2 text-sm border-l border-default truncate">
-              ${record.isContainer ? html`<span class="fas fa-fw fa-angle-right"></span>` : JSON.stringify(record.value)}
+              ${record.isContainer ? html`<span class="fas fa-fw fa-angle-right"></span>` : this.renderRecordValue(record)}
             </div>
           </a>
         `)}
@@ -329,7 +339,7 @@ class StructBee extends LitElement {
         <div class="flex-1 mr-2">
           <div class="flex border rounded-t border-default items-center">
             <div class="px-3 py-2 flex-1">
-              <app-button btn-class="px-2 py-0" ?primary=${this.hasChanges} label="Save changes" icon="fas fa-save" ?disabled=${!this.dbDesc.writable && !this.hasChanges} @click=${this.onClickSave}></app-button>
+              <app-button btn-class="px-2 py-0" ?primary=${this.hasChanges} label="Save changes" icon="fas fa-save" ?disabled=${!this.dbDesc.writable || !this.hasChanges} @click=${this.onClickSave}></app-button>
               <app-button btn-class="px-2 py-0" transparent label="Delete" ?disabled=${!this.dbDesc.writable} @click=${this.onClickDelete}></app-button>
             </div>
             <div class="px-3 py-2">
@@ -343,13 +353,16 @@ class StructBee extends LitElement {
             textarea-class="w-full px-4 py-3 font-mono rounded-b border border-default border-t-0 text-sm bg-default shadow-inner"
             textarea-style="min-height: calc(100vh - 160px)"
             ?disabled=${!this.dbDesc.writable}
-            @keyup=${this.onRecordKeyup}
             value=${this.initialRecordValue}
+            @keyup=${this.onRecordKeyup}
           ></app-code-textarea>
         </div>
         <div style="flex: 0 0 25vw">
           <div class="border border-default rounded mb-1">
-            <div class="flex items-center">
+            <div class="py-1 px-1">
+              ${this.renderEncodingControl(true)}
+            </div>
+            <div class="flex items-center border-t border-default-2">
               <div class="px-2 py-1.5 text-sm text-default-3" style="flex: 0 0 55px">Key</div>
               <div class="px-2 py-1.5 text-sm text-default-2 border-l border-default-2 flex-1 break-words">${this.record.key}</div>
             </div>
@@ -386,21 +399,80 @@ class StructBee extends LitElement {
               required
             >
           </div>
-          <textarea
+          <app-code-textarea
             id="buffer"
-            class="w-full px-4 py-3 font-mono rounded-b border border-default border-t-0 text-sm bg-default shadow-inner"
-            style="min-height: calc(100vh - 220px)"
-            spellcheck="false"
-          >{}</textarea>
+            textarea-class="w-full px-4 py-3 font-mono rounded-b border border-default border-t-0 text-sm bg-default shadow-inner"
+            textarea-style="min-height: calc(100vh - 160px)"
+            value=${this.encoding === 'json' ? '{}' : ''}
+          ></app-code-textarea>
         </div>
         <div style="flex: 0 0 25vw">
+          <div class="border border-default rounded mb-1">
+            <div class="py-1 px-1">
+              <div class="inline-flex items-center px-2 py-1">
+                <select id="encoding" class="flex-1 appearance-none outline-none bg-transparent text-sm">
+                  <option value="json" ?selected=${this.encoding === 'json'}>Encoding: json</div>
+                  <option value="utf-8" ?selected=${this.encoding === 'utf-8'}>Encoding: utf-8</div>
+                  <option value="binary" ?selected=${this.encoding === 'binary'}>Encoding: binary</option>
+                </select>
+                ${selectorSvg('w-4 h-4')}
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
+    `
+  }
+
+  renderRecordValue (record, noHtml = false) {
+    if (this.encoding === 'json') {
+      try {
+        JSON.parse(record.value)
+      } catch (e) {
+        if (!noHtml) {
+          return html`<span class="text-error"><span class="fas fa-exclamation-triangle fa-fw"></span> Invalid JSON</span> ${record.value}`
+        }
+      }
+    }
+    if (this.encoding === 'binary') {
+      return record.value.replace(/.{4}(?=.)/g, '$& ')
+    }
+    return record.value
+  }
+
+  renderEncodingControl (noBorder = false) {
+    const items = ['binary', 'utf-8', 'json']
+    const renderEncoding = (enc) => {
+      return html`
+        <option value=${enc} ?selected=${this.encoding === enc}>Encoding: ${enc}</option>
+      `
+    }
+    return html`
+      <div class="inline-flex items-center ${noBorder ? '' : 'border border-default rounded'} px-2 py-1">
+        <select id="encoding" class="flex-1 appearance-none outline-none bg-transparent text-sm" @change=${this.onEncodingChange}>
+          ${repeat(items, renderEncoding)}
+        </select>
+        ${selectorSvg('w-4 h-4')}
       </div>
     `
   }
 
   // events
   // =
+
+  onRecordKeyup (e) {
+    this.hasChanges = e.target.value !== this.initialRecordValue
+  }
+
+  onEncodingChange (e) {
+    if (this.hasChanges) {
+      if (!confirm('This will lose your current changes. Continue?')) {
+        e.currentTarget.value = this.encoding
+        return
+      }
+    }
+    emit(this, 'navigate-to', {detail: {url: QP.genFull({encoding: e.currentTarget.value})}})
+  }
   
   onToggleAllChecked (e) {
     e.preventDefault()
@@ -432,17 +504,25 @@ class StructBee extends LitElement {
   }
 
   async onClickSave () {
-    let parsed
-    const value = this.querySelector('#buffer textarea').value
-    try {
-      parsed = JSON.parse(value)
-    } catch (e) {
-      console.error(e)
-      toast.create(e.toString(), 'error')
-      return
+    const encoding = this.querySelector('#encoding').value
+    let value = this.querySelector('#buffer textarea').value
+    if (encoding === 'json') {
+      try {
+        JSON.parse(value)
+      } catch (e) {
+        console.error(e)
+        toast.create(e.toString(), 'error')
+        return
+      }
+    } else if (encoding === 'binary') {
+      value = value.replace(/\s/g, '')
+      if (/[^0-9a-f]/.test(value)) {
+        toast.create('Binary must be encoded in hex. Non-hex values are present.', 'error')
+        return
+      }
     }
     try {
-      await api.http('PUT', `/_api/bee/${joinPath(this.hyperKey, this.record.path)}`, parsed)
+      await api.http('PUT', `/_api/bee/${joinPath(this.hyperKey, this.record.path)}?encoding=${encoding}`, value, 'text/plain')
     } catch (e) {
       console.error(e)
       toast.create(e.toString(), 'error')
@@ -451,24 +531,33 @@ class StructBee extends LitElement {
     this.initialRecordValue = value
     this.hasChanges = false
     toast.create('Record saved', 'success')
+    this.load()
   }
 
   async onClickSaveNew () {
-    let parsed
     const path = this.querySelector('#path').value
-    const value = this.querySelector('#buffer').value
+    const encoding = this.querySelector('#encoding').value
+    let value = this.querySelector('#buffer textarea').value
     if (!path) {
       return toast.create('Key is required', 'error')
     }
-    try {
-      parsed = JSON.parse(value)
-    } catch (e) {
-      console.error(e)
-      toast.create(e.toString(), 'error')
-      return
+    if (encoding === 'json') {
+      try {
+        JSON.parse(value)
+      } catch (e) {
+        console.error(e)
+        toast.create(e.toString(), 'error')
+        return
+      }
+    } else if (encoding === 'binary') {
+      value = value.replace(/\s/g, '')
+      if (/[^0-9a-f]/.test(value)) {
+        toast.create('Binary must be encoded in hex. Non-hex values are present.', 'error')
+        return
+      }
     }
     try {
-      await api.http('PUT', `/_api/bee/${joinPath(this.hyperKey, ...this.isEditingNew.path, path)}`, parsed)
+      await api.http('PUT', `/_api/bee/${joinPath(this.hyperKey, ...this.isEditingNew.path, path)}?encoding=${encoding}`, value, 'text/plain')
     } catch (e) {
       console.error(e)
       toast.create(e.toString(), 'error')
@@ -551,12 +640,12 @@ async function doRename (hyperKey, record, newpath) {
       const pathParts = child.path.split('/').filter(Boolean)
       const newchildpath = [...newpathParts, ...pathParts.slice(oldpathParts.length)].join('/')
       n++
-      await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newchildpath)}`, child.value)
+      await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newchildpath)}`, child.value, 'text/plain')
       await api.http('DELETE', `/_api/bee/${joinPath(hyperKey, child.path)}`)
     }
   } else {
     n++
-    await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newpath)}`, record.value)
+    await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newpath)}`, record.value, 'text/plain')
     await api.http('DELETE', `/_api/bee/${joinPath(hyperKey, record.path)}`)
   }
   toast.create(`Renamed ${n} ${pluralize(n, 'record')}`, 'success')
@@ -573,11 +662,11 @@ async function doClone (hyperKey, record, newpath) {
       const pathParts = child.path.split('/').filter(Boolean)
       const newchildpath = [...newpathParts, ...pathParts.slice(oldpathParts.length)].join('/')
       n++
-      await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newchildpath)}`, child.value)
+      await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newchildpath)}`, child.value, 'text/plain')
     }
   } else {
     n++
-    await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newpath)}`, record.value)
+    await api.http('PUT', `/_api/bee/${joinPath(hyperKey, newpath)}`, record.value, 'text/plain')
   }
   toast.create(`Cloned ${n} ${pluralize(n, 'record')}`, 'success')
 }
@@ -602,7 +691,7 @@ async function doImport (hyperKey, path, file) {
   const fileStr = await readTextFile(file)
   const records = importFromJson(fileStr)
   for (const record of records) {
-    await api.http('PUT', `/_api/bee/${joinPath(hyperKey, path, record.path)}`, record.value)
+    await api.http('PUT', `/_api/bee/${joinPath(hyperKey, path, record.path)}`, JSON.stringify(record.value), 'text/plain')
   }
   return records.length
 }

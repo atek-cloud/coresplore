@@ -16,9 +16,10 @@ export function destroy () {
   var toast = document.querySelector('app-toast')
 
   if (toast) {
+    toast.remove()
     // fadeout before removing element
-    toast.shadowRoot.querySelector('.toast-wrapper').classList.add('hidden')
-    setTimeout(() => toast.remove(), 500)
+    // toast.shadowRoot.querySelector('.toast-wrapper').classList.add('hidden')
+    // setTimeout(() => toast.remove(), 500)
   }
 }
 

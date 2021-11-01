@@ -136,28 +136,12 @@ api.get(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
     if (db.record.type !== 'bee') throw new Error('Not a Hyperbee')
 
     if (req.query.list) {
-      const records = (await hyper.beeList(db.bee, path, req.query)).map((record: any) => {
-        const keyParts = record.key.split('\x00').filter(Boolean)
-        return {
-          key: keyParts.join('/'),
-          path: `/${joinPath(...path, ...keyParts)}`,
-          url: `hyper://${joinPath(key, ...path, ...keyParts)}`,
-          seq: record.seq,
-          value: record.value || {}
-        }
-      })
+      const records = await hyper.beeList(db.bee, path, req.query)
       res.status(200).json({records})
     } else {
-      const rpath = `/${joinPath(...path)}`
-      const record = await hyper.beeSubByPath(db.bee, path.slice(0, -1)).get(path[path.length - 1])
+      const record = await hyper.beeGet(db.bee, path, req.query)
       if (!record) return res.status(404).end()
-      res.status(200).json({
-        key: record.key,
-        path: rpath,
-        url: `hyper://${joinPath(key, rpath)}`,
-        seq: record.seq,
-        value: record.value || {}
-      })
+      res.status(200).json(record)
     }
   } catch (e: any) {
     console.error('Error while reading a database')
@@ -172,11 +156,10 @@ api.put(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
     const db = await hyper.HyperStruct.get(key)
     if (db.record.type !== 'bee') throw new Error('Not a Hyperbee')
 
-    await hyper.beeSubByPath(db.bee, path.slice(0, -1)).put(path[path.length - 1], req.body)
+    await hyper.beePut(db.bee, path, req.body, req.query)
     res.status(200).json({
       key: path[path.length - 1],
       path: `/${joinPath(...path)}`,
-      url: `hyper://${joinPath(key, ...path)}`,
       seq: undefined, // TODO needed?
       value: req.body
     })
