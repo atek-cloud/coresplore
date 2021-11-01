@@ -1,6 +1,6 @@
 {
   "name": "coresplore",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "An easy-to-run Web app for exploring and editing Hypercores",
   "bin": "dist/index.js",
   "type": "module",
