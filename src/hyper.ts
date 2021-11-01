@@ -39,7 +39,7 @@ export class HyperStruct {
       key: toBase32(keyPair.publicKey),
       secretKey: toBase32(keyPair?.secretKey),
       type,
-      writable: core.writable,
+      writable: true,
       alias,
       access
     })
@@ -47,7 +47,7 @@ export class HyperStruct {
     if (type === 'bee') {
       await struct._initBee()
     }
-    structs.set(toBase32(core.key), core)
+    structs.set(toBase32(core.key), struct)
     return struct
   }
 
@@ -144,6 +144,62 @@ export function setup (opts: {storagePath: string}) {
   swarm.on('connection', (connection: any) => store.replicate(connection))
 }
 
+export async function coreGet (core: any, seq: number, opts: any): Promise<any> {
+  const encoding = isValidValueEncoding(opts.encoding) ? opts.encoding : 'utf-8'
+  const timeout = !Number.isNaN(Number(opts.timeout)) ? Number(opts.timeout) : 0
+  let value
+  if (encoding === 'hyperbee') {
+    const block = await core.get(seq, {valueEncoding: 'binary', timeout})
+    if (seq === 0) {
+      value = HyperbeeMessages.Header.decode(block)
+    } else {
+      value = HyperbeeMessages.Node.decode(block)
+      value.index = HyperbeeMessages.YoloIndex.decode(value.index)
+      value.key = value.key.toString('utf-8')
+      value.value = value.value?.toString('utf-8')
+    }
+    value = value || block
+  } else if (encoding === 'binary') {
+    value = (await core.get(seq, {valueEncoding: 'binary', timeout})).toString('hex')
+  } else {
+    value = await core.get(seq, {valueEncoding: encoding, timeout})
+  }
+  return {seq, value}
+}
+
+export async function coreList (core: any, opts: any): Promise<any> {
+  let start = opts.gt ? (Number(opts.gt) + 1) : opts.gte ? Number(opts.gte) : 0
+  if (Number.isNaN(start)) start = 0
+  let end = opts.lt ? Number(opts.lt) : opts.lte ? Number(opts.lte + 1) : Infinity
+  if (Number.isNaN(end)) end = Infinity
+  const encoding = isValidValueEncoding(opts.encoding) ? opts.encoding : 'utf-8'
+  const timeout = !Number.isNaN(Number(opts.timeout)) ? Number(opts.timeout) : 0
+
+  await core.update()
+
+  const blocks = []
+  const getOpts = {encoding, timeout}
+  for (let i = start; i < end && i < core.length; i++) {
+    blocks.push(await coreGet(core, i, getOpts))
+  }
+  
+  return blocks
+}
+
+export async function coreAppend (core: any, value: any, opts: any): Promise<any> {
+  const encoding = isValidValueEncoding(opts.encoding) ? opts.encoding : 'utf-8'
+  if (encoding === 'binary') {
+    value = Buffer.from(value, 'hex')
+  } else if (encoding === 'json' || encoding === 'hyperbee') {
+    value = JSON.stringify(value)
+    value = Buffer.from(value, 'utf-8')
+  } else {
+    value = Buffer.from(value, 'utf-8')
+  }
+  await core.append(value)
+  return {seq: core.length - 1}
+}
+
 export function beeSubByPath (bee: Hyperbee, pathParts: string[]): Hyperbee {
   for (let i = 0; i < pathParts.length; i++) {
     bee = bee?.sub(pathParts[i])
@@ -168,4 +224,8 @@ function assertValidType (v: string) {
   if (v !== 'core' && v !== 'bee') {
     throw new Error('Type must be "core" or "bee"')
   }
+}
+
+function isValidValueEncoding (v: string): boolean {
+  return v === 'hyperbee' || v === 'json' || v === 'utf-8' || v === 'binary'
 }

@@ -12,10 +12,10 @@ npm i -g coresplore
 
 ## Features
 
-- [ ] Access Hypercores
+- [ ] Access Hypercore data-structures
   - [x] Hyperbees using utf8 keys and JSON values
   - [ ] Hyperbees with other key or value encodings
-  - [ ] Hypercores with no known "data structure"
+  - [x] Hypercores
   - [ ] Multiwriter hypercores
 - [x] Create and/or save Hypercores
 - [x] Edit, copy, rename, and delete records

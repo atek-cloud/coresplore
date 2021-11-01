@@ -93,9 +93,41 @@ api.delete('/dbs/:key', (req: Request, res: Response) => {
   res.status(200).json({})
 })
 
-// api.get('/core/:key/:seq') TODO
-// api.get('/core/:key/:seq') TODO
-// api.post('/core/:key') TODO
+api.get('/core/:key', async (req: Request, res: Response) => {
+  try {
+    const db = await hyper.HyperStruct.get(req.params.key)
+    const records = await hyper.coreList(db.core, req.query)
+    res.status(200).json({records})
+  } catch (e: any) {
+    console.error('Error while reading a database')
+    console.error(e)
+    res.status(500).json({error: true, message: e.message})
+  }
+})
+
+api.get('/core/:key/:seq', async (req: Request, res: Response) => {
+  try {
+    const db = await hyper.HyperStruct.get(req.params.key)
+    const record = await hyper.coreGet(db.core, Number(req.params.seq) || 0, req.query)
+    res.status(200).json(record)
+  } catch (e: any) {
+    console.error('Error while reading a database')
+    console.error(e)
+    res.status(500).json({error: true, message: e.message})
+  }
+})
+
+api.post('/core/:key', async (req: Request, res: Response) => {
+  try {
+    const db = await hyper.HyperStruct.get(req.params.key)
+    const record = await hyper.coreAppend(db.core, req.body, req.query)
+    res.status(200).json(record)
+  } catch (e: any) {
+    console.error('Error while appending to a hypercore')
+    console.error(e)
+    res.status(500).json({error: true, message: e.message})
+  }
+})
 
 api.get(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
   try {

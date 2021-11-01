@@ -24,7 +24,7 @@ export function addDbRecord (db: DbRecord) {
   if (!config.dbs || !Array.isArray(config.dbs)) {
     config.dbs = [db]
   } else {
-    if (!config.dbs.find((db: DbRecord) => db.key === db.key)) {
+    if (!config.dbs.find((db2: DbRecord) => db2.key === db.key)) {
       config.dbs.push(db)
     } else {
       return updateDbRecord(db)
@@ -42,7 +42,7 @@ export function getDbRecord (key: string) {
 
 export function updateDbRecord (db: DbRecord) {
   if (config.dbs) {
-    const record = config.dbs.find((db: DbRecord) => db.key === db.key)
+    const record = config.dbs.find((db2: DbRecord) => db2.key === db.key)
     Object.assign(record, db)
     config._sync()
   }

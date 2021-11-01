@@ -103,9 +103,8 @@ class AppRoot extends LitElement {
     switch (this.currentPath) {
       case '/':
         return html`<app-main-view id="view" current-path=${this.currentPath} current-qp=${this.currentQP}></app-main-view>`
-    }
-    if (this.currentPath.startsWith('/p/db/')) {
-      return html`<app-db-view id="view" current-path=${this.currentPath} current-qp=${this.currentQP}></app-db-view>`
+      case '/db':
+        return html`<app-db-view id="view" current-path=${this.currentPath} current-qp=${this.currentQP}></app-db-view>`
     }
     return html`
       <div class="bg-gray-100 min-h-screen wide">

@@ -1,8 +1,8 @@
 /* globals beaker */
 import { html } from '../../../vendor/lit/lit.min.js'
-import { repeat } from '../../../vendor/lit/directives/repeat.js'
 import { BasePopup } from './base.js'
 import * as api from '../../lib/api.js'
+import * as QP from '../../lib/qp.js'
 import { emit } from '../../lib/dom.js'
 import selectorSvg from '../../icons/selector.js'
 import '../button.js'
@@ -14,6 +14,7 @@ export class ConfigdbPopup extends BasePopup {
   static get properties () {
     return {
       currentError: {type: String},
+      type: {type: String},
       access: {type: String}
     }
   }
@@ -22,6 +23,7 @@ export class ConfigdbPopup extends BasePopup {
     super()
     this.currentError = undefined
     this.isNew = !opts?.key
+    this.type = 'bee'
     this.key = opts?.key
     this.alias = opts?.alias
     this.access = opts?.access || 'public'
@@ -61,6 +63,22 @@ export class ConfigdbPopup extends BasePopup {
     return html`
       <form class="bg-default px-6 py-5" @submit=${this.onSubmit}>
         <h2 class="text-2xl mb-2 font-medium">${this.isNew ? 'New' : 'Edit'} Database</h2>
+        ${this.isNew ? html`
+          <div>
+            <label class="block" for="alias">Type</label>
+            <div class="flex items-center border border-default mb-1 px-4 py-3 rounded">
+              <select class="flex-1 appearance-none outline-none" name="type" @change=${this.onTypeChange}>
+                <option value="bee" ?selected=${this.access === 'bee'}>Hyperbee</option>
+                <option value="core" ?selected=${this.access === 'core'}>Hypercore</option>
+              </select>
+              ${selectorSvg()}
+            </div>
+            <div class="text-default-3 text-sm mb-4">
+              ${this.type === 'bee' ? 'A key/value database.' : ''}
+              ${this.type === 'core' ? 'An append-only log.' : ''}
+            </div>
+          </div>
+        ` : ''}
         <div>
           <label class="block" for="alias">Database Name</label>
           <input class="block border border-default mb-3 px-4 py-3 rounded w-full" type="text" name="alias" value=${this.alias || ''} required autocomplete="off">
@@ -97,9 +115,14 @@ export class ConfigdbPopup extends BasePopup {
     this.access = e.currentTarget.value
   }
 
+  onTypeChange (e) {
+    this.type = e.currentTarget.value
+  }
+
   async onSubmit (e) {
     e.preventDefault()
     this.currentError = undefined
+    const type = e.currentTarget.type.value
     const alias = e.currentTarget.alias.value.trim()
     const access = e.currentTarget.access.value
     if (!alias) {
@@ -112,11 +135,11 @@ export class ConfigdbPopup extends BasePopup {
     }
     if (this.isNew) {
       const dbInfo = await api.http('POST', '/_api/dbs', {
-        type: 'bee',
+        type,
         alias,
         access
       })
-      emit(this, 'navigate-to', {detail: {url: `/p/db/${dbInfo.key}`}})
+      emit(this, 'navigate-to', {detail: {url: `/db${QP.gen({key: dbInfo.key})}`}})
     } else {
       await api.http('PATCH', `/_api/dbs/${this.key}`, {alias, access})
     }

@@ -1,6 +1,7 @@
 import { LitElement, html } from '../../vendor/lit/lit.min.js'
 import { repeat } from '../../vendor/lit/directives/repeat.js'
 import * as api from '../lib/api.js'
+import * as QP from '../lib/qp.js'
 import { emit } from '../lib/dom.js'
 import { shortenHash } from '../lib/strings.js'
 import { writeToClipboard } from '../lib/clipboard.js'
@@ -60,6 +61,7 @@ class MainView extends LitElement {
           <div class="mx-2 my-2 border border-default rounded bg-default">
             <div class="flex px-4 py-2 text-xs font-bold border-default-2">
               <div style="flex: 0 0 120px">ID</div>
+              <div style="flex: 0 0 80px">Type</div>
               <div class="flex-1">Alias</div>
               <div style="flex: 0 0 140px">Writable</div>
               <div style="flex: 0 0 140px">Access</div>
@@ -72,8 +74,9 @@ class MainView extends LitElement {
             ` : ''}
             ${this.dbs ? html`
               ${repeat(this.dbs, db=>db.key, (db, i) => html`
-                <a class="flex items-center px-4 py-2 hover:bg-default-2 text-sm border-t border-default-2" href=${`/p/db/${db.key}`}>
+                <a class="flex items-center px-4 py-2 hover:bg-default-2 text-sm border-t border-default-2" href=${`/db${QP.gen({key: db.key}, true)}`}>
                   <div style="flex: 0 0 120px">${shortenHash(db.key)}</div>
+                  <div style="flex: 0 0 80px">${db.type}</div>
                   <div class="flex-1">${db.alias}</div>
                   <div style="flex: 0 0 140px">${db.writable ? 'writable' : 'read-only'}</div>
                   <div style="flex: 0 0 140px">${db.access}</div>
@@ -103,7 +106,7 @@ class MainView extends LitElement {
 
   onKeyupKeyInput (e) {
     if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-      emit(this, 'navigate-to', {detail: {url: `/p/db/${e.currentTarget.value.trim().toLowerCase()}`}})
+      emit(this, 'navigate-to', {detail: {url: `/db${QP.get({key: e.currentTarget.value.trim().toLowerCase()}, true)}`}})
     }
   }
 

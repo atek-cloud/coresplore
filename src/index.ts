@@ -36,6 +36,7 @@ if (password) {
   app.use(basicAuth({users: {admin: password}, challenge: true}))
 }
 app.use(bodyParser.json())
+app.use(bodyParser.text())
 app.use('/_api', api)
 app.use(express.static(join(__dirname, 'frontend')))
 app.use((req: any, res: any) => res.sendFile(join(__dirname, 'frontend/index.html')))
