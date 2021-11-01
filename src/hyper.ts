@@ -1,4 +1,5 @@
-import path from 'path'
+// @ts-ignore -prf
+import crypto from 'hypercore-crypto'
 // @ts-ignore -prf
 import Corestore from 'corestore'
 // @ts-ignore -prf
@@ -9,88 +10,138 @@ import HyperbeeMessages from 'hyperbee/lib/messages.js'
 // @ts-ignore -prf
 import pump from 'pump'
 import concat from 'concat-stream'
-import { toBase32, fromBase32, jsonSyncer } from './util.js'
+import * as config from './config.js'
+import lock from './lock.js'
+import { toBase32, fromBase32 } from './util.js'
 
 let store: Corestore
 let swarm: Hyperswarm
-let config: any
-const cores: Map<string, any> = new Map()
-const bees: Map<string, any> = new Map()
+const structs: Map<string, any> = new Map()
 
-export interface DbRecord {
-  key: string
-  secretKey?: string
-  type: string
-  writable: boolean
-  alias?: string
-  access?: string
+export class HyperStruct {
+  bee?: Hyperbee
+  constructor (public core: any, public record: config.DbRecord) {
+  }
+
+  static isLoaded (key: string) {
+    return structs.has(key)
+  }
+
+  static getCached (key: string) {
+    return structs.get(key)
+  }
+
+  static async create ({type, alias, access}: {type: string, alias: string, access: string}) {
+    assertValidType(type)
+    const keyPair = crypto.keyPair()
+    const core = store.get(keyPair)
+    const struct = new HyperStruct(core, {
+      key: toBase32(keyPair.publicKey),
+      secretKey: toBase32(keyPair?.secretKey),
+      type,
+      writable: core.writable,
+      alias,
+      access
+    })
+    await struct._initCore(access !== 'private')
+    if (type === 'bee') {
+      await struct._initBee()
+    }
+    structs.set(toBase32(core.key), core)
+    return struct
+  }
+
+  static async get (key: string) {
+    const release = await lock(`hyper-struct:get:${key}`)
+    try {
+      let struct = structs.get(key)
+      if (!struct) {
+        let dbRecord = config.getDbRecord(key)
+
+        const core = (dbRecord && dbRecord.secretKey) ? (
+          store.get({publicKey: fromBase32(key), secretKey: fromBase32(dbRecord.secretKey)})
+        ) : (
+          store.get(fromBase32(key))
+        )
+
+        struct = new HyperStruct(core, dbRecord)
+        await struct._initCore(dbRecord?.access !== 'private')
+
+        if (!dbRecord) {
+          dbRecord = {
+            key,
+            type: await struct._detectType(),
+            writable: struct.core.writable
+          }
+        }
+
+        if (dbRecord.type === 'bee') {
+          await struct._initBee()
+        }
+
+        structs.set(key, struct)
+      }
+      return struct
+    } finally {
+      release()
+    }
+  }
+
+  saveToCoresplore () {
+    config.addDbRecord(this.record)
+  }
+
+  unsaveFromCoresplore () {
+    config.removeDbRecord(this.record.key)
+  }
+
+  updateRecord (updates: any) {
+    Object.assign(this.record, updates)
+    config.updateDbRecord(this.record)
+    if (this.record.access === 'private') {
+      swarm.leave(this.core.discoveryKey)
+    } else {
+      swarm.join(this.core.discoveryKey)
+    }
+  }
+
+  async _initCore (shouldSwarm: boolean) {
+    await this.core.ready()
+    if (shouldSwarm) swarm.join(this.core.discoveryKey)
+    if (!this.core.writable) {
+      await swarm.flush()
+      await this.core.update()
+    }
+  }
+
+  async _initBee () {
+    if (!this.bee) {
+      this.bee = new Hyperbee(this.core, {
+        keyEncoding: 'utf8',
+        valueEncoding: 'json'
+      })
+      await this.bee.ready()
+    }
+  }
+
+  async _detectType () {
+    const headerBlock = await this.core.get(0)
+    try {
+      const beeHeader = HyperbeeMessages.Header.decode(headerBlock)
+      if (beeHeader.protocol === 'hyperbee') {
+        return 'bee'
+      }
+    } catch (e) {
+      // ignore
+    }
+    return 'core'
+  }
 }
 
 export function setup (opts: {storagePath: string}) {
-  config = jsonSyncer(path.join(opts.storagePath, 'config.json'))
   store = new Corestore(opts.storagePath)
   swarm = new Hyperswarm()
   swarm.on('connection', (connection: any) => store.replicate(connection))
-}
-
-export async function getCore (key: string) {
-  let core = cores.get(key)
-  if (!core) {
-    const dbRecord = getDbRecord(key)
-    if (dbRecord && dbRecord.secretKey) {
-      core = store.get({publicKey: fromBase32(key), secretKey: fromBase32(dbRecord.secretKey)})
-    } else {
-      core = store.get(fromBase32(key))
-    }
-    await initCore(core, !(dbRecord?.access === 'private'))
-    cores.set(key, core)
-  }
-  return core
-}
-
-export async function createCore (keyPair: any) {
-  const core = store.get(keyPair)
-  await initCore(core, false)
-  cores.set(toBase32(core.key), core)
-  return core
-}
-
-export async function initCore (core: any, shouldSwarm = true) {
-  await core.ready()
-  if (shouldSwarm) swarm.join(core.discoveryKey)
-  if (!core.writable) {
-    await swarm.flush()
-    await core.update()
-  }
-}
-
-export async function getBee (key: string) {
-  let bee = bees.get(key)
-  if (!bee) {
-    const core = await getCore(key)
-    bee = new Hyperbee(core, {
-      keyEncoding: 'utf8',
-      valueEncoding: 'json'
-    })
-    await bee.ready()
-    bees.set(key, bee)
-  }
-  return bee
-}
-
-export async function getDbByType (key: string) {
-  if (bees.has(key)) return bees.get(key)
-  const core = await getCore(key)
-  const headerBlock = await core.get(0)
-  try {
-    const beeHeader = HyperbeeMessages.Header.decode(headerBlock)
-    if (beeHeader.protocol === 'hyperbee') {
-      return getBee(key)
-    }
-  } catch (e) {
-    // ignore
-  }
-  return core
 }
 
 export function beeSubByPath (bee: Hyperbee, pathParts: string[]): Hyperbee {
@@ -113,50 +164,8 @@ export async function beeList (bee: Hyperbee, pathParts: string[], opts: any): P
   })
 }
 
-export function listDbs () {
-  return config.dbs || []
-}
-
-export function addDbRecord (db: DbRecord) {
-  if (!config.dbs || !Array.isArray(config.dbs)) {
-    config.dbs = [db]
-  } else {
-    config.dbs.push(db)
-  }
-  swarmByRecord(db)
-  config._sync()
-  return db
-}
-
-export function getDbRecord (key: string) {
-  if (config.dbs) {
-    return config.dbs.find((db: DbRecord) => db.key === key)
-  }
-}
-
-export function updateDbRecord (db: DbRecord) {
-  if (config.dbs) {
-    const record = config.dbs.find((db: DbRecord) => db.key === db.key)
-    Object.assign(record, db)
-    swarmByRecord(record)
-    config._sync()
-  }
-}
-
-export function removeDbRecord (key: string) {
-  if (config.dbs && Array.isArray(config.dbs)) {
-    config.dbs = config.dbs.filter((db2: {key: string}) => db2.key !== key)
-    config._sync()
-  }
-}
-
-function swarmByRecord (db: DbRecord) {
-  const core = cores.get(db.key)
-  if (core) {
-    if (db?.access === 'private') {
-      swarm.leave(core.discoveryKey)
-    } else {
-      swarm.join(core.discoveryKey)
-    }
+function assertValidType (v: string) {
+  if (v !== 'core' && v !== 'bee') {
+    throw new Error('Type must be "core" or "bee"')
   }
 }

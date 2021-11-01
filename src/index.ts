@@ -10,7 +10,8 @@ import basicAuth from 'express-basic-auth'
 import ansi from 'ansi-escapes'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
-import { setup } from './hyper.js'
+import * as config from './config.js'
+import * as hyper from './hyper.js'
 import { api } from './api.js'
 
 const __dirname = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -26,7 +27,8 @@ try {
 } catch (e) {
   fs.mkdirSync(storagePath, {recursive: true})
 }
-setup({storagePath})
+config.setup({storagePath})
+hyper.setup({storagePath})
 
 const app = createExpressApp()
 if (password) {

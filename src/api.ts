@@ -1,47 +1,27 @@
 import { Router, Request, Response } from 'express'
 import Hyperbee from 'hyperbee'
-// @ts-ignore -prf
-import crypto from 'hypercore-crypto'
 import * as hyper from './hyper.js'
-import { toBase32, joinPath } from './util.js'
+import * as config from './config.js'
+import { joinPath } from './util.js'
 
 export const api = Router()
 
 api.get('/dbs', (req: Request, res: Response) => {
-  return res.json({dbs: hyper.listDbs()})
+  return res.json({dbs: config.listDbs()})
 })
 
 api.post('/dbs', async (req: Request, res: Response) => {
   try {
-    let keyPair
-    let core, key
-    let type = req.body?.type === 'bee' ? 'bee' : 'core'
-
+    let struct
     if (req.body?.key) {
-      // adding an existing
-      key = req.body.key
-      const db = await hyper.getDbByType(key)
-      type = db instanceof Hyperbee ? 'bee' : 'core'
-      core = db.feed || db
+      struct = await hyper.HyperStruct.get(req.body.key)
+      if ('alias' in req.body) struct.record.alias = req.body.alias
+      if ('access' in req.body) struct.record.access = req.body.access
     } else {
-      // creating a new
-      keyPair = crypto.keyPair()
-      core = await hyper.createCore(keyPair)
-      key = toBase32(core.key)
-      if (type === 'bee') {
-        await hyper.getBee(key)
-      }
+      struct = await hyper.HyperStruct.create(req.body)
     }
-
-    const record = hyper.addDbRecord({
-      key,
-      secretKey: keyPair?.secretKey ? toBase32(keyPair?.secretKey) : undefined,
-      type,
-      writable: core.writable,
-      alias: req.body?.alias,
-      access: req.body?.access || 'public'
-    })
-    res.status(200).json(record)
+    await struct.saveToCoresplore()
+    res.status(200).json(struct.record)
   } catch (e: any) {
     console.error('Error while creating a new database')
     console.error(e)
@@ -51,7 +31,7 @@ api.post('/dbs', async (req: Request, res: Response) => {
 
 api.get('/dbs/:key', async (req: Request, res: Response) => {
   try {
-    const dbRecord = hyper.getDbRecord(req.params.key)
+    const dbRecord = config.getDbRecord(req.params.key)
     if (dbRecord) {
       res.status(200).json({
         saved: true,
@@ -62,14 +42,12 @@ api.get('/dbs/:key', async (req: Request, res: Response) => {
         access: dbRecord.access
       })
     } else {
-      const db = await hyper.getDbByType(req.params.key)
-      const type = db instanceof Hyperbee ? 'bee' : 'core'
-      const core = type === 'bee' ? db._feed : db
+      const struct = await hyper.HyperStruct.get(req.body.key)
       res.status(200).json({
         saved: false,
         key: req.params.key,
-        type,
-        writable: core.writable,
+        type: struct.record.type,
+        writable: struct.record.writable,
         access: 'public'
       })
     }
@@ -82,14 +60,20 @@ api.get('/dbs/:key', async (req: Request, res: Response) => {
 
 api.patch('/dbs/:key', (req: Request, res: Response) => {
   try {
-    const dbRecord = hyper.getDbRecord(req.params.key)
+    const dbRecord = config.getDbRecord(req.params.key)
     if (!dbRecord) return res.status(404).end({error: true, message: 'DB record not found'})
 
     dbRecord.alias = ('alias' in req.body) ? req.body.alias : dbRecord.alias
     dbRecord.access = ('access' in req.body) ? req.body.access : dbRecord.access
-    hyper.updateDbRecord(dbRecord)
+
+    if (hyper.HyperStruct.isLoaded(req.params.key)) {
+      hyper.HyperStruct.getCached(req.params.key).updateRecord(dbRecord)
+    } else {
+      config.updateDbRecord(dbRecord)
+    }
 
     res.status(200).json({
+      saved: true,
       key: dbRecord.key,
       type: dbRecord.type,
       writable: dbRecord.writable,
@@ -104,7 +88,8 @@ api.patch('/dbs/:key', (req: Request, res: Response) => {
 })
 
 api.delete('/dbs/:key', (req: Request, res: Response) => {
-  hyper.removeDbRecord(req.params.key)
+  // TODO unload and delete struct
+  config.removeDbRecord(req.params.key)
   res.status(200).json({})
 })
 
@@ -115,11 +100,11 @@ api.delete('/dbs/:key', (req: Request, res: Response) => {
 api.get(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
   try {
     const {key, path} = parsePath(req.params[0])
-    const db = await hyper.getDbByType(key)
-    if (!(db instanceof Hyperbee)) throw new Error('Not a Hyperbee')
+    const db = await hyper.HyperStruct.get(key)
+    if (db.record.type !== 'bee') throw new Error('Not a Hyperbee')
 
     if (req.query.list) {
-      const records = (await hyper.beeList(db, path, req.query)).map((record: any) => {
+      const records = (await hyper.beeList(db.bee, path, req.query)).map((record: any) => {
         const keyParts = record.key.split('\x00').filter(Boolean)
         return {
           key: keyParts.join('/'),
@@ -132,7 +117,7 @@ api.get(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
       res.status(200).json({records})
     } else {
       const rpath = `/${joinPath(...path)}`
-      const record = await hyper.beeSubByPath(db, path.slice(0, -1)).get(path[path.length - 1])
+      const record = await hyper.beeSubByPath(db.bee, path.slice(0, -1)).get(path[path.length - 1])
       if (!record) return res.status(404).end()
       res.status(200).json({
         key: record.key,
@@ -152,10 +137,10 @@ api.get(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
 api.put(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
   try {
     const {key, path} = parsePath(req.params[0])
-    const db = await hyper.getDbByType(key)
-    if (!(db instanceof Hyperbee)) throw new Error('Not a Hyperbee')
+    const db = await hyper.HyperStruct.get(key)
+    if (db.record.type !== 'bee') throw new Error('Not a Hyperbee')
 
-    await hyper.beeSubByPath(db, path.slice(0, -1)).put(path[path.length - 1], req.body)
+    await hyper.beeSubByPath(db.bee, path.slice(0, -1)).put(path[path.length - 1], req.body)
     res.status(200).json({
       key: path[path.length - 1],
       path: `/${joinPath(...path)}`,
@@ -173,10 +158,10 @@ api.put(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
 api.delete(/\/bee\/(.*)/i, async (req: Request, res: Response) => {
   try {
     const {key, path} = parsePath(req.params[0])
-    const db = await hyper.getDbByType(key)
-    if (!(db instanceof Hyperbee)) throw new Error('Not a Hyperbee')
+    const db = await hyper.HyperStruct.get(key)
+    if (db.record.type !== 'bee') throw new Error('Not a Hyperbee')
 
-    await hyper.beeSubByPath(db, path.slice(0, -1)).del(path[path.length - 1])
+    await hyper.beeSubByPath(db.bee, path.slice(0, -1)).del(path[path.length - 1])
     res.status(200).json({})
   } catch (e: any) {
     console.error('Error while updating a database')
